@@ -124,6 +124,14 @@ class FlyingChairs(FlowDataset):
 
         images = sorted(glob(osp.join(root, '*.ppm')))
         flows = sorted(glob(osp.join(root, '*.flo')))
+	
+        index_images = [int(os.path.basename(file).split("_")[0]) for file in images]
+        index_flows = [int(os.path.basename(file).split("_")[0]) for file in flows]
+        
+        for index in index_images:
+            if index not in index_flows:
+                print(index)
+			
         assert (len(images)//2 == len(flows))
 
         split_list = np.loadtxt('chairs_split.txt', dtype=np.int32)
