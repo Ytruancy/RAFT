@@ -125,12 +125,14 @@ class FlyingChairs(FlowDataset):
         images = sorted(glob(osp.join(root, '*.ppm')))
         flows = sorted(glob(osp.join(root, '*.flo')))
 	
-        index_images = [int(os.path.basename(file).split("_")[0]) for file in images]
-        index_flows = [int(os.path.basename(file).split("_")[0]) for file in flows]
+        index_images = [str(os.path.basename(file).split("_")[0]) for file in images]
+        index_flows = [str(os.path.basename(file).split("_")[0]) for file in flows]
         
         for index in index_images:
             if index not in index_flows:
-                print(index)
+                images.remove(osp.join(root, index + '_img1.ppm'))
+                images.remove(osp.join(root, index + '_img2.ppm'))
+                flows.remove(osp.join(root, index + '_flow.flo'))
 			
         assert (len(images)//2 == len(flows))
 
