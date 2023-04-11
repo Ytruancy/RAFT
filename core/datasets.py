@@ -122,18 +122,25 @@ class FlyingChairs(FlowDataset):
     def __init__(self, aug_params=None, split='train', root='datasets/FlyingChairs_release/data'):
         super(FlyingChairs, self).__init__(aug_params)
 
+
+        #Filter the unmatched pairs due to data loss
         images = sorted(glob(osp.join(root, '*.ppm')))
+        #build common indicy arrays
+        images1 = sorted(glob(osp.join(root, '*img1.ppm')))
+        images2 = sorted(glob(osp.join(root, '*img2.ppm')))
         flows = sorted(glob(osp.join(root, '*.flo')))
-	
-        index_images = [str(os.path.basename(file).split("_")[0]) for file in images]
+        print("Number of images before filter: ", len(images))
+        print("Number of flows before filter: ", len(flows))
+        index_images1 = [str(os.path.basename(file).split("_")[0]) for file in images1]
+        index_images2 = [str(os.path.basename(file).split("_")[0]) for file in images2]
         index_flows = [str(os.path.basename(file).split("_")[0]) for file in flows]
-        
-        for index in index_images:
-            if index not in index_flows:
-                images.remove(osp.join(root, index + '_img1.ppm'))
-                images.remove(osp.join(root, index + '_img2.ppm'))
-                flows.remove(osp.join(root, index + '_flow.flo'))
-			
+        common_indicies = set(index_images1)&set(index_images2)&set(index_flows)
+        #Filter the unmatched pairs
+        images = [file for file in images if str(os.path.basename(file).split("_")[0]) in common_indicies]
+        flows = [file for file in flows if str(os.path.basename(file).split("_")[0]) in common_indicies]
+        print("Number of images after filter: ", len(images))
+        print("Number of flows after filter: ", len(flows))
+
         assert (len(images)//2 == len(flows))
 
         split_list = np.loadtxt('chairs_split.txt', dtype=np.int32)

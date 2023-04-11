@@ -164,12 +164,16 @@ def train(args):
             optimizer.zero_grad()
             image1, image2, flow, valid = [x.cuda() for x in data_blob]
 
+            start_time = time.time()
+
             if args.add_noise:
                 stdv = np.random.uniform(0.0, 5.0)
                 image1 = (image1 + stdv * torch.randn(*image1.shape).cuda()).clamp(0.0, 255.0)
                 image2 = (image2 + stdv * torch.randn(*image2.shape).cuda()).clamp(0.0, 255.0)
 
-            flow_predictions = model(image1, image2, iters=args.iters)            
+            flow_predictions = model(image1, image2, iters=args.iters)     
+
+            end_time = time.time()       
 
             loss, metrics = sequence_loss(flow_predictions, flow, valid, args.gamma)
             scaler.scale(loss).backward()
@@ -179,6 +183,8 @@ def train(args):
             scaler.step(optimizer)
             scheduler.step()
             scaler.update()
+
+              
 
             logger.push(metrics)
 
@@ -203,9 +209,13 @@ def train(args):
             
             total_steps += 1
 
+            end_time = time.time()
+            #print("Time taken for step: %f" % (end_time - start_time))
+
             if total_steps > args.num_steps:
                 should_keep_training = False
                 break
+
 
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name
