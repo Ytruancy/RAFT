@@ -171,6 +171,7 @@ def train(args):
     for epoch in range(num_epochs):
         start_epoch_train = time.time()
         if epoch>0:
+            model.eval()
             #Getting training predictions for subset selection
             print("getting current predictions for full training set")
             train_dataset = datasets.fetch_trainingset(args)
