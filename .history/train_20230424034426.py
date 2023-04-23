@@ -18,7 +18,6 @@ from torch.utils.data import DataLoader
 from raft import RAFT
 import evaluate
 import datasets
-from utils.utils import InputPadder, forward_interpolate
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -148,8 +147,7 @@ def train(args):
     if args.stage != 'chairs':
         model.module.freeze_bn()
 
-    
-    torch.cuda.empty_cache()
+    train_loader = datasets.fetch_dataloader(args)
     optimizer, scheduler = fetch_optimizer(args, model)
 
     total_steps = 0
@@ -160,51 +158,19 @@ def train(args):
     add_noise = True
 
     should_keep_training = True
-    num_epochs = 50
-    subset_size = 0.4
+    while should_keep_training:
 
-    start_subset = 0
-    random = True
-    cluster_feature = True #Whether to use cluster feature to select subset or not
-    selection_predictions = None #predictions to use for selecting subset
-
-    for epoch in range(num_epochs):
-        start_epoch_train = time.time()
-        if epoch>0:
-            #Getting training predictions for subset selection
-            print("getting current predictions for full training set")
-            train_dataset = datasets.fetch_trainingset(args)
-            selection_predictions = []
-            for val_id in range(len(train_dataset)):
-                image1, image2, flow_gt, _ = train_dataset[val_id]
-                image1 = image1[None].cuda()
-                image2 = image2[None].cuda()
-                _, flow_pr = model(image1, image2, iters=24, test_mode=True)
-                selection_predictions.append(flow_pr[0].cpu()-flow_gt)  
-        torch.cuda.empty_cache()
-        if epoch==start_subset or epoch%1==0:
-            print("Epoch {}, selecting subset".format(epoch))
-            start_subsetselect = time.time()
-            train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=cluster_feature,predictions = selection_predictions)
-            end_subsetselect = time.time()
-            print("Subset selection complete with {} seconds".format(end_subsetselect-start_subsetselect))
-            cluster_feature = False
-            random=False
-        elif epoch<start_subset:
-            print("Epoch {}, using full subset".format(epoch))
-            train_loader = datasets.fetch_dataloader(args,coreset=False)
-        else:
-            print("Epoch {}, using pre-selected subset".format(epoch)) 
         for i_batch, data_blob in enumerate(train_loader):
             optimizer.zero_grad()
             image1, image2, flow, valid = [x.cuda() for x in data_blob]
+
             if args.add_noise:
                 stdv = np.random.uniform(0.0, 5.0)
                 image1 = (image1 + stdv * torch.randn(*image1.shape).cuda()).clamp(0.0, 255.0)
                 image2 = (image2 + stdv * torch.randn(*image2.shape).cuda()).clamp(0.0, 255.0)
 
-            flow_predictions = model(image1, image2, iters=args.iters)  
-                 
+            flow_predictions = model(image1, image2, iters=args.iters)            
+
             loss, metrics = sequence_loss(flow_predictions, flow, valid, args.gamma)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)                
@@ -215,37 +181,31 @@ def train(args):
             scaler.update()
 
             logger.push(metrics)
+
+            if total_steps % VAL_FREQ == VAL_FREQ - 1:
+                PATH = 'checkpoints/%d_%s.pth' % (total_steps+1, args.name)
+                torch.save(model.state_dict(), PATH)
+
+                results = {}
+                for val_dataset in args.validation:
+                    if val_dataset == 'chairs':
+                        results.update(evaluate.validate_chairs(model.module))
+                    elif val_dataset == 'sintel':
+                        results.update(evaluate.validate_sintel(model.module))
+                    elif val_dataset == 'kitti':
+                        results.update(evaluate.validate_kitti(model.module))
+
+                logger.write_dict(results)
+                
+                model.train()
+                if args.stage != 'chairs':
+                    model.module.freeze_bn()
+            
             total_steps += 1
 
-            #if total_steps % VAL_FREQ == VAL_FREQ - 1:
-
-        PATH = 'checkpoints/%d_%s.pth' % (total_steps+1, args.name)
-        torch.save(model.state_dict(), PATH)
-
-        results = {}
-        for val_dataset in args.validation:
-            if val_dataset == 'chairs':
-                results.update(evaluate.validate_chairs(model.module))
-            elif val_dataset == 'sintel':
-                results.update(evaluate.validate_sintel(model.module))
-            elif val_dataset == 'kitti':
-                results.update(evaluate.validate_kitti(model.module))
-        
-        
-        logger.write_dict(results)
-        
-        model.train()
-        if args.stage != 'chairs':
-            model.module.freeze_bn()
-          
-        end_epoch_train = time.time()
-        print("Epoch {} training complete with {} seconds".format(epoch,end_epoch_train-start_epoch_train))   
-
-         
-
-            # if total_steps > args.num_steps:
-            #     should_keep_training = False
-            #     break
+            if total_steps > args.num_steps:
+                should_keep_training = False
+                break
 
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name
