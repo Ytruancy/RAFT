@@ -161,23 +161,20 @@ def train(args):
 
     should_keep_training = True
     num_epochs = 50
-    subset_size = 0.2
+    subset_size = 0.4
 
     start_subset = 0
-    random = False
+    random = True
     cluster_feature = True #Whether to use cluster feature to select subset or not
     selection_predictions = None #predictions to use for selecting subset
-    start_all_time = time.time()
+
     for epoch in range(num_epochs):
+        start_epoch_train = time.time()      
         torch.cuda.empty_cache()
-        if epoch>=start_subset:
+        if epoch==start_subset or epoch%1==0:
             print("Epoch {}, selecting subset".format(epoch))
             start_subsetselect = time.time()
-            if (epoch+1)%5==0 and not cluster_feature:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=False,model=model.module)
-            else:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=True,model=model.module)
-                cluster_feature = False #Only select subset using cluster feature once
+            train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=cluster_feature,model)
             end_subsetselect = time.time()
             print("Subset selection complete with {} seconds".format(end_subsetselect-start_subsetselect))
             cluster_feature = False
@@ -187,8 +184,6 @@ def train(args):
             train_loader = datasets.fetch_dataloader(args,coreset=False)
         else:
             print("Epoch {}, using pre-selected subset".format(epoch)) 
-        model.train()
-        start_epoch_train = time.time() 
         for i_batch, data_blob in enumerate(train_loader):
             optimizer.zero_grad()
             image1, image2, flow, valid = [x.cuda() for x in data_blob]
@@ -212,12 +207,10 @@ def train(args):
             total_steps += 1
 
             #if total_steps % VAL_FREQ == VAL_FREQ - 1:
-        end_epoch_train = time.time()
-        print("Epoch {} training complete with {} seconds".format(epoch,end_epoch_train-start_epoch_train))
+
         PATH = 'checkpoints/%d_%s.pth' % (total_steps+1, args.name)
         torch.save(model.state_dict(), PATH)
 
-        print("start validation")
         results = {}
         for val_dataset in args.validation:
             if val_dataset == 'chairs':
@@ -234,15 +227,15 @@ def train(args):
         if args.stage != 'chairs':
             model.module.freeze_bn()
           
-           
+        end_epoch_train = time.time()
+        print("Epoch {} training complete with {} seconds".format(epoch,end_epoch_train-start_epoch_train))   
 
          
 
             # if total_steps > args.num_steps:
             #     should_keep_training = False
             #     break
-    end_all_time = time.time()
-    print("Total training time: {}".format(end_all_time-start_all_time))
+
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name
     torch.save(model.state_dict(), PATH)

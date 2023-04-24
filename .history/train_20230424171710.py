@@ -173,7 +173,7 @@ def train(args):
         if epoch>=start_subset:
             print("Epoch {}, selecting subset".format(epoch))
             start_subsetselect = time.time()
-            if (epoch+1)%5==0 and not cluster_feature:
+            if (epoch+1)%5==0 and  and cluster_feature:
                 train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=False,model=model.module)
             else:
                 train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=True,model=model.module)
@@ -242,7 +242,7 @@ def train(args):
             #     should_keep_training = False
             #     break
     end_all_time = time.time()
-    print("Total training time: {}".format(end_all_time-start_all_time))
+    print("Total training time: {}".format(end_all_time-start_all_time)
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name
     torch.save(model.state_dict(), PATH)

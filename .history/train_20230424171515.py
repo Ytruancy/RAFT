@@ -170,10 +170,10 @@ def train(args):
     start_all_time = time.time()
     for epoch in range(num_epochs):
         torch.cuda.empty_cache()
-        if epoch>=start_subset:
+        if epoch>=start_subset and cluster_feature:
             print("Epoch {}, selecting subset".format(epoch))
             start_subsetselect = time.time()
-            if (epoch+1)%5==0 and not cluster_feature:
+            if (epoch+1)%5==0:
                 train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=False,model=model.module)
             else:
                 train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=True,model=model.module)
@@ -241,8 +241,7 @@ def train(args):
             # if total_steps > args.num_steps:
             #     should_keep_training = False
             #     break
-    end_all_time = time.time()
-    print("Total training time: {}".format(end_all_time-start_all_time))
+
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name
     torch.save(model.state_dict(), PATH)

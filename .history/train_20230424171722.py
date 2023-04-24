@@ -242,7 +242,7 @@ def train(args):
             #     should_keep_training = False
             #     break
     end_all_time = time.time()
-    print("Total training time: {}".format(end_all_time-start_all_time))
+    print("Total training time: {}".format(end_all_time-start_all_time)
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name
     torch.save(model.state_dict(), PATH)

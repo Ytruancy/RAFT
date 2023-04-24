@@ -23,8 +23,6 @@ from sklearn.decomposition import PCA
 from utils import frame_utils
 from utils.augmentor import FlowAugmentor, SparseFlowAugmentor
 from skimage.metrics import mean_squared_error, structural_similarity
-from extractor import BasicEncoder, SmallEncoder
-from tqdm import tqdm
 
 class FlowDataset(data.Dataset):
     def __init__(self, aug_params=None, sparse=False):
@@ -297,12 +295,12 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
         if not random:
             if cluster_feature:
                 print("Selecting subset based on cluster feature")
-                for i_batch, (image1s, image2s, flows, valid) in tqdm(enumerate(train_loader)):
+                for i_batch, (image1s, image2s, flows, valid) in enumerate(train_loader):
                     #disparity_matrics.append(structural_similarity(image1.numpy(),image2.numpy(),multichannel = True))
                     #left_image.append(image1)
                     #right_image.append(image2)
                     for flow in flows:
-                        hog_features= hog(np.transpose(flow,(1,2,0)), orientations=9, pixels_per_cell=(16,16),cells_per_block=(1,1), visualize=False, channel_axis=-1,feature_vector=True)
+                        hog_features= hog(np.transpose(flow,(1,2,0)), orientations=9, pixels_per_cell=(16,16),cells_per_block=(2,2), visualize=False, channel_axis=-1,feature_vector=True)
                         #Directly write into local file
                         """ with open('flying_chairs_hog.bin', 'ab+') as f:
                             f.write(hog_features.tobytes()) """
@@ -330,16 +328,14 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
                 print("getting current predictions for full training set")
                 train_dataset = fetch_trainingset(args)
                 predictions = []
-                for val_id in tqdm(range(len(train_dataset))):
+                for val_id in range(len(train_dataset)):
                     image1, image2, flow_gt, _ = train_dataset[val_id]
                     image1 = image1[None].cuda()
                     image2 = image2[None].cuda()
-                    _, flow_pr = model(image1, image2, iters=5, test_mode=True)
-                    error_map = (flow_pr[0].cpu()-flow_gt)
-                    extracted_features= hog(np.transpose(error_map,(1,2,0)), orientations=9, \
-                                      pixels_per_cell=(16,16),cells_per_block=(1,1), \
-                                        visualize=False, channel_axis=-1,feature_vector=True)
-                    predictions.append(extracted_features)
+                    _, flow_pr = model(image1, image2, iters=24, test_mode=True)
+                    error_map = (flow_pr[0].cpu()-flow_gt).reshape(2,-1).
+                    
+                    predictions.append(flow_pr[0].cpu()-flow_gt)
                 predictions = np.array(predictions)
                 print("predictions shape is {}".format(predictions.shape))
                 #predictions=np.reshape(predictions,(len(predictions),-1))

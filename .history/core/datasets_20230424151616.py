@@ -297,7 +297,7 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
         if not random:
             if cluster_feature:
                 print("Selecting subset based on cluster feature")
-                for i_batch, (image1s, image2s, flows, valid) in tqdm(enumerate(train_loader)):
+                for i_batch, (image1s, image2s, flows, valid) in tq(enumerate(train_loader)):
                     #disparity_matrics.append(structural_similarity(image1.numpy(),image2.numpy(),multichannel = True))
                     #left_image.append(image1)
                     #right_image.append(image2)
