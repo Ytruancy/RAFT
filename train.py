@@ -92,6 +92,7 @@ class Logger:
         self.model = model
         self.scheduler = scheduler
         self.total_steps = 0
+        self.epoch = 0
         self.running_loss = {}
         self.writer = None
 
@@ -123,12 +124,12 @@ class Logger:
             self._print_training_status()
             self.running_loss = {}
 
-    def write_dict(self, results):
+    def write_dict(self, results, epoch):
         if self.writer is None:
             self.writer = SummaryWriter()
 
         for key in results:
-            self.writer.add_scalar(key, results[key], self.total_steps)
+            self.writer.add_scalar(key, results[key], epoch)
 
     def close(self):
         self.writer.close()
@@ -236,7 +237,7 @@ def train(args):
         end_val = time.time()
         print("Validation complete with {} seconds".format(end_val-start_val))
         
-        logger.write_dict(results)
+        logger.write_dict(results,epoch+1)
         
         model.train()
         if args.stage != 'chairs':
