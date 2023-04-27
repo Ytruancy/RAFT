@@ -6,3 +6,8 @@ pytorch_env
 models
 build
 correlation.egg-info
+datasets
+runs
+checkpoints
+self_trained-models
+

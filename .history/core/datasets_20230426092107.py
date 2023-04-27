@@ -349,14 +349,14 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
                                       pixels_per_cell=(50,50),cells_per_block=(1,1), \
                                         visualize=False, channel_axis=-1,feature_vector=True)
                     predictions.append(extracted_features) """
-                    #Extracting feature using downsampling
+                    """ #Extracting feature using downsampling
                     x_error = error_map[0]
                     y_error = error_map[1]
                     downsampling_factor = 10
                     downsampled_x = uniform_filter(x_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
                     downsampled_y = uniform_filter(y_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
                     downsampled_concat = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1))) 
-                    predictions.append(downsampled_concat)
+                    predictions.append(downsampled_concat)"""
 
                     
                 predictions = np.array(predictions)

@@ -160,23 +160,23 @@ def train(args):
     add_noise = True
 
     should_keep_training = True
-    num_epochs = 29
-    subset_size = 0.4
+    num_epochs = 19
+    subset_size = 0.2
 
-    start_subset = 10
+    start_subset = 0
     random = False
-    cluster_feature = False #Whether to use cluster feature to select subset or not
+    cluster_feature = True #Whether to use cluster feature to select subset or not
     selection_predictions = None #predictions to use for selecting subset
     start_all_time = time.time()
     for epoch in range(num_epochs):
         torch.cuda.empty_cache()
-        if epoch+1>=start_subset:
+        if epoch>=start_subset:
             print("Epoch {}, selecting subset".format(epoch))
             start_subsetselect = time.time()
             if (epoch+1)%5==0 and not cluster_feature:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=False,model=model.module)
+                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=random,cluster_feature=False,model=model.module)
             elif cluster_feature:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
+                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=random,cluster_feature=True,model=model.module)
                 cluster_feature = False #Only select subset using cluster feature once
             else:
                 print("Epoch {}, using pre-selected subset".format(epoch)) 
@@ -185,14 +185,8 @@ def train(args):
             cluster_feature = False
             random=False
         else:
-            print("Epoch {}, using full or random subset".format(epoch))
-            # if epoch+1<=5:
-            #     train_loader = datasets.fetch_dataloader(args,coreset=False)
-            # else:
-            #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            if epoch==0:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
-        
+            print("Epoch {}, using full subset".format(epoch))
+            train_loader = datasets.fetch_dataloader(args,coreset=False)
         model.train()
         start_epoch_train = time.time() 
         for i_batch, data_blob in enumerate(train_loader):
@@ -220,12 +214,11 @@ def train(args):
             #if total_steps % VAL_FREQ == VAL_FREQ - 1:
         end_epoch_train = time.time()
         print("Epoch {} training complete with {} seconds".format(epoch,end_epoch_train-start_epoch_train))
-        PATH = 'checkpoints/%d_%s.pth' % (epoch+1, args.name)
+        PATH = 'epochs/%d_%s.pth' % (epoch, args.name)
         torch.save(model.state_dict(), PATH)
 
         print("start validation")
         results = {}
-        start_val = time.time()
         for val_dataset in args.validation:
             if val_dataset == 'chairs':
                 results.update(evaluate.validate_chairs(model.module))
@@ -233,8 +226,7 @@ def train(args):
                 results.update(evaluate.validate_sintel(model.module))
             elif val_dataset == 'kitti':
                 results.update(evaluate.validate_kitti(model.module))
-        end_val = time.time()
-        print("Validation complete with {} seconds".format(end_val-start_val))
+        
         
         logger.write_dict(results)
         

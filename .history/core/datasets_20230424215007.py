@@ -9,7 +9,6 @@ from pympler import asizeof
 import pickle
 import sys
 import h5py
-from scipy.ndimage import uniform_filter
 
 import os
 import math
@@ -335,30 +334,18 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
                     image1, image2, flow_gt, _ = train_dataset[val_id]
                     image1 = image1[None].cuda()
                     image2 = image2[None].cuda()
-                    _, flow_pr = model(image1, image2, iters=3, test_mode=True)
+                    _, flow_pr = model(image1, image2, iters=5, test_mode=True)
                     error_map = (flow_pr[0].cpu()-flow_gt)
-                    """ x_error = error_map[0]
-                    y_error = error_map[1]
-                    pca = PCA(n_components=5)
-                    x_decreased = pca.fit_transform(x_error).reshape(-1)
-                    y_decreased = pca.fit_transform(y_error).reshape(-1)
-                    compressed_concat = np.concatenate((x_decreased,y_decreased))
-                    predictions.append(compressed_concat) """
-                    #Extracting feature using HOG as local descriptor
-                    """ extracted_features= hog(np.transpose(error_map,(1,2,0)), orientations=9, \
-                                      pixels_per_cell=(50,50),cells_per_block=(1,1), \
-                                        visualize=False, channel_axis=-1,feature_vector=True)
-                    predictions.append(extracted_features) """
-                    #Extracting feature using downsampling
                     x_error = error_map[0]
                     y_error = error_map[1]
-                    downsampling_factor = 10
-                    downsampled_x = uniform_filter(x_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
-                    downsampled_y = uniform_filter(y_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
-                    downsampled_concat = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1))) 
-                    predictions.append(downsampled_concat)
-
-                    
+                    pca = PCA(n_components=50)
+                    x_decreased = pca.fit_transform(x_error).reshape(-1)
+                    y_decreased = pca.fit_transform(y_error).reshape(-1)
+                    compressed_concat
+                    extracted_features= hog(np.transpose(error_map,(1,2,0)), orientations=9, \
+                                      pixels_per_cell=(16,16),cells_per_block=(1,1), \
+                                        visualize=False, channel_axis=-1,feature_vector=True)
+                    predictions.append(extracted_features)
                 predictions = np.array(predictions)
                 print("predictions shape is {}".format(predictions.shape))
                 #predictions=np.reshape(predictions,(len(predictions),-1))
