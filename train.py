@@ -174,7 +174,7 @@ def train(args):
         if epoch+1>=start_subset:
             print("Epoch {}, selecting subset".format(epoch))
             start_subsetselect = time.time()
-            if (epoch+1)%5==0 and not cluster_feature:
+            if (epoch+1)%10==0 and not cluster_feature:
                 train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=False,model=model.module)
             elif cluster_feature:
                 train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
@@ -191,8 +191,7 @@ def train(args):
             #     train_loader = datasets.fetch_dataloader(args,coreset=False)
             # else:
             #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            if epoch==0:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
+            train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
         
         model.train()
         start_epoch_train = time.time() 
