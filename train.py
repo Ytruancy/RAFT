@@ -161,7 +161,7 @@ def train(args):
     add_noise = True
 
     should_keep_training = True
-    num_epochs = 29
+    num_epochs = 43
     subset_size = 0.4
 
     start_subset = 10
@@ -191,7 +191,7 @@ def train(args):
             #     train_loader = datasets.fetch_dataloader(args,coreset=False)
             # else:
             #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
+            train_loader = datasets.fetch_dataloader(args,coreset=True,random=True,subset_size=0.2)
         
         model.train()
         start_epoch_train = time.time() 

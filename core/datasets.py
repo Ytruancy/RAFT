@@ -11,12 +11,15 @@ import sys
 import h5py
 from scipy.ndimage import uniform_filter
 
+from numba import njit, prange
+
 import os
 import math
 import random
 from glob import glob
 import os.path as osp
 import time
+import cv2
 from skimage.feature import hog
 from skimage import color
 from sklearn.decomposition import PCA
@@ -26,6 +29,8 @@ from utils.augmentor import FlowAugmentor, SparseFlowAugmentor
 from skimage.metrics import mean_squared_error, structural_similarity
 from extractor import BasicEncoder, SmallEncoder
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import StandardScaler,MinMaxScaler
 
 class FlowDataset(data.Dataset):
     def __init__(self, aug_params=None, sparse=False):
@@ -249,7 +254,64 @@ def fetch_trainingset(args,TRAIN_DS='C+T+K+S+H'):
         train_dataset = KITTI(aug_params, split='training')
     return train_dataset
 
-
+#Rewrite the function into parallel mode
+def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
+    def get_descriptors_surf(channel):
+        #hog as descriptors
+        """ descriptors= hog(np.transpose(channel,(1,2,0)), \
+                              orientations=9, pixels_per_cell=(50,50),\
+                                cells_per_block=(1,1), visualize=False, \
+                                    channel_axis=-1,feature_vector=True) """
+        scaler = MinMaxScaler()
+        x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))
+        y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))
+        #pca as extracter
+        pca = PCA(n_components=10)
+        x_decreased = pca.fit_transform(x_channel).reshape(-1)
+        y_decreased = pca.fit_transform(y_channel).reshape(-1)
+        descriptors = np.concatenate((x_decreased,y_decreased))
+        # channel = cv2.normalize(np.array(channel), None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        # surf = cv2.ORB_create(200)
+        # keypoints, descriptors = surf.detectAndCompute(channel, None)
+        return descriptors
+    
+    @torch.no_grad()
+    def process_data_item(val_id):
+        image1, image2, flow_gt, _ = train_dataset[val_id]
+        if mode != "train": 
+            image1 = image1[None].cuda()
+            image2 = image2[None].cuda()
+            _, flow_pr = model(image1, image2, iters=3, test_mode=True)
+            error_map = (flow_pr[0].cpu() - flow_gt)
+            #Use surf as extractor
+            extracted_feature = get_descriptors_surf(error_map)
+            # Extracting feat ure using HOG as local descriptor
+        else:
+            #Use surf as extractor
+            extracted_feature = get_descriptors_surf(flow_gt)
+        if val_id%1000==0:       
+            print("Finish processing image {}".format(val_id))
+        return extracted_feature
+    
+    dataset_size = len(train_dataset)
+    chunk_size = 250
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        predictions = list(executor.map(process_data_item, range(dataset_size), chunksize=chunk_size))
+    predictions = np.array(predictions)
+    print("predictions shape is {}".format(predictions.shape))
+    num_chunks = int(np.ceil(len(predictions) / 20000))
+    chunks = np.array_split(predictions, num_chunks)
+    selected_indices = []
+    for i, chunk in enumerate(chunks):
+        print(f"Processing chunk {i + 1} of {num_chunks}")
+        B = int(subset_size*len(chunk))
+        subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, \
+                                            chunk, 'euclidean', no=0,equal_num=False,smtk=0)
+        # Add the offset to the selected indices to get the correct index in the large array
+        offset = i * chunk_size
+        adjusted_indices = [index + offset for index in subset]
+        selected_indices.extend(adjusted_indices) 
+    return selected_indices
 
 
 @torch.no_grad()
@@ -298,71 +360,52 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
         if not random:
             if cluster_feature:
                 print("Selecting subset based on cluster feature")
-                for i_batch, (image1s, image2s, flows, valid) in tqdm(enumerate(train_loader)):
-                    #disparity_matrics.append(structural_similarity(image1.numpy(),image2.numpy(),multichannel = True))
-                    #left_image.append(image1)
-                    #right_image.append(image2)
-                    for flow in flows:
-                        hog_features= hog(np.transpose(flow,(1,2,0)), orientations=9, pixels_per_cell=(16,16),cells_per_block=(1,1), visualize=False, channel_axis=-1,feature_vector=True)
-                        #Directly write into local file
-                        """ with open('flying_chairs_hog.bin', 'ab+') as f:
-                            f.write(hog_features.tobytes()) """
-                        optical_flows.append(hog_features)
-                        #occupied_memory = asizeof.asizeof(optical_flows)/(1024*1024)
-                """ with open('hog_Flyingchairs.pkl', 'wb') as f:
-                    pickle.dump(optical_flows, f) """
-                print("Shape of the array is [{},{}]".format(len(optical_flows),len(optical_flows[0])))
-                #Saving array using pickle
-                # print("saving the array")
-                # #using pickle
-                # with open('hog_Flyingchairs.pkl', 'wb') as f:
-                #     pickle.dump(optical_flows, f)
-                # #Using h5py
-                # """with h5py.File("hog_Flyingchairs.h5", "w") as file:
-                #     file.create_dataset("large_array", data=optical_flows)"""
-                # print("array saved")
-                print("subset size is {}".format(B))
-                subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, np.array(optical_flows), 'euclidean', no=0,equal_num=False,smtk=0)
+                # for i_batch, (image1s, image2s, flows, valid) in tqdm(enumerate(train_loader)):
+                #     #disparity_matrics.append(structural_similarity(image1.numpy(),image2.numpy(),multichannel = True))
+                #     #left_image.append(image1)
+                #     #right_image.append(image2)
+                #     # for flow in flows:
+                #     #     hog_features= hog(np.transpose(flow,(1,2,0)), orientations=9, pixels_per_cell=(16,16),cells_per_block=(1,1), visualize=False, channel_axis=-1,feature_vector=True)
+                #     #     #Directly write into local file
+                #     #     """ with open('flying_chairs_hog.bin', 'ab+') as f:
+                #     #         f.write(hog_features.tobytes()) """
+                #     #     optical_flows.append(hog_features)
+                #     #occupied_memory = asizeof.asizeof(optical_flows)/(1024*1024)
+                #     flows_np = [flow.numpy() for flow in flows]
+                #     optical_flows+=compute_optical_flows(flows_np)
+                # print("Shape of the array is [{},{}]".format(len(optical_flows),len(optical_flows[0])))
+                # print("subset size is {}".format(B))
+                # subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, np.array(optical_flows), 'euclidean', no=0,equal_num=False,smtk=0)
+                subset = subsetSelection(args,train_dataset,subset_size)
                 print("subset index extracted")
             else:
                 print("Selecting subset based on model predictions")
                 model.eval()
-                #Getting training predictions for subset selection
-                print("getting current predictions for full training set")
-                train_dataset = fetch_trainingset(args)
-                predictions = []
-                for val_id in tqdm(range(len(train_dataset))):
-                    image1, image2, flow_gt, _ = train_dataset[val_id]
-                    image1 = image1[None].cuda()
-                    image2 = image2[None].cuda()
-                    _, flow_pr = model(image1, image2, iters=3, test_mode=True)
-                    error_map = (flow_pr[0].cpu()-flow_gt)
-                    """ x_error = error_map[0]
-                    y_error = error_map[1]
-                    pca = PCA(n_components=5)
-                    x_decreased = pca.fit_transform(x_error).reshape(-1)
-                    y_decreased = pca.fit_transform(y_error).reshape(-1)
-                    compressed_concat = np.concatenate((x_decreased,y_decreased))
-                    predictions.append(compressed_concat) """
-                    #Extracting feature using HOG as local descriptor
-                    """ extracted_features= hog(np.transpose(error_map,(1,2,0)), orientations=9, \
-                                      pixels_per_cell=(50,50),cells_per_block=(1,1), \
-                                        visualize=False, channel_axis=-1,feature_vector=True)
-                    predictions.append(extracted_features) """
-                    #Extracting feature using downsampling
-                    x_error = error_map[0]
-                    y_error = error_map[1]
-                    downsampling_factor = 10
-                    downsampled_x = uniform_filter(x_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
-                    downsampled_y = uniform_filter(y_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
-                    downsampled_concat = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1))) 
-                    predictions.append(downsampled_concat)
+                # #Getting training predictions for subset selection
+                # print("getting current predictions for full training set")
+                # train_dataset = fetch_trainingset(args)
+                # predictions = []
+                # for val_id in tqdm(range(len(train_dataset))):
+                #     image1, image2, flow_gt, _ = train_dataset[val_id]
+                #     image1 = image1[None].cuda()
+                #     image2 = image2[None].cuda()
+                #     _, flow_pr = model(image1, image2, iters=3, test_mode=True)
+                #     error_map = (flow_pr[0].cpu()-flow_gt)
+                    
+                #     #Extracting feature using HOG as local descriptor
+                #     extracted_features= hog(np.transpose(error_map,(1,2,0)), orientations=9, \
+                #                       pixels_per_cell=(50,50),cells_per_block=(1,1), \
+                #                         visualize=False, channel_axis=-1,feature_vector=True)
+                #     predictions.append(extracted_features)
+                    
 
                     
-                predictions = np.array(predictions)
-                print("predictions shape is {}".format(predictions.shape))
-                #predictions=np.reshape(predictions,(len(predictions),-1))
-                subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, predictions, 'euclidean', no=0,equal_num=False,smtk=0)
+                # predictions = np.array(predictions)
+                # print("predictions shape is {}".format(predictions.shape))
+                # #predictions=np.reshape(predictions,(len(predictions),-1))
+                # subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, predictions, 'euclidean', no=0,equal_num=False,smtk=0)
+                subset = subsetSelection(args,train_dataset,subset_size,model=model,mode="pred")
+                print("subset extracted")    
         else:
             print("using random subset")
             subset = np.random.choice(len(train_dataset), size=B, replace=False)
