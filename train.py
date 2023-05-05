@@ -161,7 +161,7 @@ def train(args):
     add_noise = True
 
     should_keep_training = True
-    num_epochs = 43
+    num_epochs = 10
     subset_size = 0.4
 
     start_subset = 10

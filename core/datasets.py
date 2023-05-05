@@ -258,18 +258,18 @@ def fetch_trainingset(args,TRAIN_DS='C+T+K+S+H'):
 def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
     def get_descriptors_surf(channel):
         #hog as descriptors
-        """ descriptors= hog(np.transpose(channel,(1,2,0)), \
+        descriptors= hog(np.transpose(channel,(1,2,0)), \
                               orientations=9, pixels_per_cell=(50,50),\
                                 cells_per_block=(1,1), visualize=False, \
-                                    channel_axis=-1,feature_vector=True) """
-        scaler = MinMaxScaler()
+                                    channel_axis=-1,feature_vector=True)
+        """ scaler = MinMaxScaler()
         x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))
         y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))
         #pca as extracter
         pca = PCA(n_components=10)
         x_decreased = pca.fit_transform(x_channel).reshape(-1)
         y_decreased = pca.fit_transform(y_channel).reshape(-1)
-        descriptors = np.concatenate((x_decreased,y_decreased))
+        descriptors = np.concatenate((x_decreased,y_decreased)) """
         # channel = cv2.normalize(np.array(channel), None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
         # surf = cv2.ORB_create(200)
         # keypoints, descriptors = surf.detectAndCompute(channel, None)
