@@ -161,23 +161,25 @@ def train(args):
     add_noise = True
 
     should_keep_training = True
-    num_epochs = 10
+    num_epochs = 39
     subset_size = 0.4
-
-    start_subset = 10
+    selected_instance = []
+    data_coverage  = []
+    start_subset = 5
     random = False
     cluster_feature = False #Whether to use cluster feature to select subset or not
     selection_predictions = None #predictions to use for selecting subset
     start_all_time = time.time()
+    weight = None
     for epoch in range(num_epochs):
         torch.cuda.empty_cache()
         if epoch+1>=start_subset:
             print("Epoch {}, selecting subset".format(epoch))
             start_subsetselect = time.time()
-            if (epoch+1)%10==0 and not cluster_feature:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=False,model=model.module)
+            if ((epoch+1)%10==0 or (epoch+1)==start_subset) and not cluster_feature:
+                train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=False,model=model.module)
             elif cluster_feature:
-                train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
+                train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
                 cluster_feature = False #Only select subset using cluster feature once
             else:
                 print("Epoch {}, using pre-selected subset".format(epoch)) 
@@ -187,17 +189,19 @@ def train(args):
             random=False
         else:
             print("Epoch {}, using full or random subset".format(epoch))
-            # if epoch+1<=5:
+            # if epoch+1<=3:
             #     train_loader = datasets.fetch_dataloader(args,coreset=False)
             # else:
             #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            train_loader = datasets.fetch_dataloader(args,coreset=True,random=True,subset_size=0.2)
-        
+            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,random=True,subset_size=subset_size)
+           
+        weight = torch.from_numpy(weights).float().cuda() #Pass the subset weight
+        selected_instance.extend(selected_index)
         model.train()
         start_epoch_train = time.time() 
         for i_batch, data_blob in enumerate(train_loader):
             optimizer.zero_grad()
-            image1, image2, flow, valid = [x.cuda() for x in data_blob]
+            image1, image2, flow, valid , idx= [x.cuda() for x in data_blob]
             if args.add_noise:
                 stdv = np.random.uniform(0.0, 5.0)
                 image1 = (image1 + stdv * torch.randn(*image1.shape).cuda()).clamp(0.0, 255.0)
@@ -206,12 +210,15 @@ def train(args):
             flow_predictions = model(image1, image2, iters=args.iters)  
                  
             loss, metrics = sequence_loss(flow_predictions, flow, valid, args.gamma)
+            if (epoch+1)>=start_subset:
+                loss = (loss * weight[idx.long()]).mean()
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)                
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
             
-            scaler.step(optimizer)
             scheduler.step()
+            scaler.step(optimizer)
+            
             scaler.update()
 
             logger.push(metrics)
@@ -220,6 +227,8 @@ def train(args):
             #if total_steps % VAL_FREQ == VAL_FREQ - 1:
         end_epoch_train = time.time()
         print("Epoch {} training complete with {} seconds".format(epoch,end_epoch_train-start_epoch_train))
+        print("Data coverage: {}".format(len(set(selected_instance))/Size_fullset))
+        data_coverage.append(len(set(selected_instance))/Size_fullset)
         PATH = 'checkpoints/%d_%s.pth' % (epoch+1, args.name)
         torch.save(model.state_dict(), PATH)
 
@@ -250,6 +259,7 @@ def train(args):
             #     should_keep_training = False
             #     break
     end_all_time = time.time()
+    print("Data coverage: {}".format(len(set(selected_instance))/Size_fullset))
     print("Total training time: {}".format(end_all_time-start_all_time))
     logger.close()
     PATH = 'checkpoints/%s.pth' % args.name

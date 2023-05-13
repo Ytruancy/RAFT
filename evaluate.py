@@ -79,7 +79,7 @@ def validate_chairs(model, iters=24):
 
     val_dataset = datasets.FlyingChairs(split='validation')
     for val_id in range(len(val_dataset)):
-        image1, image2, flow_gt, _ = val_dataset[val_id]
+        image1, image2, flow_gt, _, _ = val_dataset[val_id]
         image1 = image1[None].cuda()
         image2 = image2[None].cuda()
 
@@ -102,7 +102,7 @@ def validate_sintel(model, iters=32):
         epe_list = []
 
         for val_id in range(len(val_dataset)):
-            image1, image2, flow_gt, _ = val_dataset[val_id]
+            image1, image2, flow_gt, _ ,_= val_dataset[val_id]
             image1 = image1[None].cuda()
             image2 = image2[None].cuda()
 
@@ -134,7 +134,7 @@ def validate_kitti(model, iters=24):
     val_dataset = datasets.KITTI(split='training')
     out_list, epe_list = [], []
     for val_id in range(len(val_dataset)):
-        image1, image2, flow_gt, valid_gt = val_dataset[val_id]
+        image1, image2, flow_gt, valid_gt, _ = val_dataset[val_id]
         image1 = image1[None].cuda()
         image2 = image2[None].cuda()
 

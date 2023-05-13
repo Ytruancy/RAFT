@@ -104,7 +104,7 @@ class FlowDataset(data.Dataset):
         else:
             valid = (flow[0].abs() < 1000) & (flow[1].abs() < 1000)
 
-        return img1, img2, flow, valid.float()
+        return img1, img2, flow, valid.float(), index
 
 
 
@@ -277,7 +277,7 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
     
     @torch.no_grad()
     def process_data_item(val_id):
-        image1, image2, flow_gt, _ = train_dataset[val_id]
+        image1, image2, flow_gt, _ , _= train_dataset[val_id]
         if mode != "train": 
             image1 = image1[None].cuda()
             image2 = image2[None].cuda()
@@ -299,19 +299,27 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
         predictions = list(executor.map(process_data_item, range(dataset_size), chunksize=chunk_size))
     predictions = np.array(predictions)
     print("predictions shape is {}".format(predictions.shape))
-    num_chunks = int(np.ceil(len(predictions) / 20000))
-    chunks = np.array_split(predictions, num_chunks)
+
+    chunk_size = 20000
+    num_chunks = int(np.ceil(len(predictions) / chunk_size))
+    chunks = np.array_split(predictions, 1)
     selected_indices = []
+    weights = np.zeros(len(train_dataset))
     for i, chunk in enumerate(chunks):
         print(f"Processing chunk {i + 1} of {num_chunks}")
         B = int(subset_size*len(chunk))
         subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, \
                                             chunk, 'euclidean', no=0,equal_num=False,smtk=0)
+        #Normalising subset weight
+        subset_weight = subset_weight / np.sum(subset_weight) * len(subset_weight)
         # Add the offset to the selected indices to get the correct index in the large array
         offset = i * chunk_size
         adjusted_indices = [index + offset for index in subset]
+        offset_subset = offset + subset
+        weights[offset_subset] = subset_weight
         selected_indices.extend(adjusted_indices) 
-    return selected_indices
+
+    return selected_indices, weights
 
 
 @torch.no_grad()
@@ -376,7 +384,7 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
                 # print("Shape of the array is [{},{}]".format(len(optical_flows),len(optical_flows[0])))
                 # print("subset size is {}".format(B))
                 # subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, np.array(optical_flows), 'euclidean', no=0,equal_num=False,smtk=0)
-                subset = subsetSelection(args,train_dataset,subset_size)
+                subset,weights = subsetSelection(args,train_dataset,subset_size)
                 print("subset index extracted")
             else:
                 print("Selecting subset based on model predictions")
@@ -404,15 +412,16 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H', coreset = False, subset_size = 
                 # print("predictions shape is {}".format(predictions.shape))
                 # #predictions=np.reshape(predictions,(len(predictions),-1))
                 # subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, predictions, 'euclidean', no=0,equal_num=False,smtk=0)
-                subset = subsetSelection(args,train_dataset,subset_size,model=model,mode="pred")
+                subset,weights = subsetSelection(args,train_dataset,subset_size,model=model,mode="pred")
                 print("subset extracted")    
         else:
             print("using random subset")
             subset = np.random.choice(len(train_dataset), size=B, replace=False)
+            weights = np.ones(len(subset))
         indexed_subset = torch.utils.data.Subset(train_dataset,indices=subset)
         subset_loader = data.DataLoader(indexed_subset, batch_size=args.batch_size, pin_memory=False, shuffle=True, num_workers=4, drop_last=True)
         print('Training with {} out of {} image pairs'.format(len(subset),len(train_dataset)))
-        return subset_loader
+        return subset_loader,subset,weights,len(train_dataset)
     else:
         print('Training with %d image pairs' % len(train_dataset))
         return train_loader
