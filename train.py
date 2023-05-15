@@ -163,9 +163,10 @@ def train(args):
     should_keep_training = True
     num_epochs = 39
     subset_size = 0.4
+    training_time = []
     selected_instance = []
     data_coverage  = []
-    start_subset = 5
+    start_subset = 2
     random = False
     cluster_feature = False #Whether to use cluster feature to select subset or not
     selection_predictions = None #predictions to use for selecting subset
@@ -188,13 +189,15 @@ def train(args):
             cluster_feature = False
             random=False
         else:
+            start_subsetselect = time.time()
             print("Epoch {}, using full or random subset".format(epoch))
             # if epoch+1<=3:
             #     train_loader = datasets.fetch_dataloader(args,coreset=False)
             # else:
             #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,random=True,subset_size=subset_size)
-           
+            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloaderdatasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=True,model=model.module)
+            end_subsetselect = time.time()
+        subset_selection_time = end_subsetselect-start_subsetselect
         weight = torch.from_numpy(weights).float().cuda() #Pass the subset weight
         selected_instance.extend(selected_index)
         model.train()
@@ -215,18 +218,20 @@ def train(args):
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)                
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-            
-            scheduler.step()
             scaler.step(optimizer)
             
             scaler.update()
+            scheduler.step()
+            
 
             logger.push(metrics)
             total_steps += 1
 
             #if total_steps % VAL_FREQ == VAL_FREQ - 1:
         end_epoch_train = time.time()
-        print("Epoch {} training complete with {} seconds".format(epoch,end_epoch_train-start_epoch_train))
+        epoch_training_time = end_epoch_train-start_epoch_train
+        print("Epoch {} training complete with {} seconds".format(epoch_training_time))
+        training_time.append(epoch_training_time+subset_selection_time)
         print("Data coverage: {}".format(len(set(selected_instance))/Size_fullset))
         data_coverage.append(len(set(selected_instance))/Size_fullset)
         PATH = 'checkpoints/%d_%s.pth' % (epoch+1, args.name)
@@ -259,6 +264,7 @@ def train(args):
             #     should_keep_training = False
             #     break
     end_all_time = time.time()
+    print("total training time: {}".format(training_time))
     print("Data coverage: {}".format(len(set(selected_instance))/Size_fullset))
     print("Total training time: {}".format(end_all_time-start_all_time))
     logger.close()
