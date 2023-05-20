@@ -7,6 +7,9 @@ import torch.nn.functional as F
 import craig
 from pympler import asizeof
 import pickle
+from theano.tensor.signal.pool import pool_2d
+import theano.tensor as T
+import theano
 import sys
 import h5py
 from scipy.ndimage import uniform_filter
@@ -258,10 +261,34 @@ def fetch_trainingset(args,TRAIN_DS='C+T+K+S+H'):
 def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
     def get_descriptors_surf(channel):
         #hog as descriptors
-        descriptors= hog(np.transpose(channel,(1,2,0)), \
+        scaler = MinMaxScaler()
+        x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))*255
+        y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))*255
+        fixed_channel = np.stack((x_channel,y_channel))
+        descriptors= hog(np.transpose(fixed_channel,(1,2,0)), \
                               orientations=9, pixels_per_cell=(50,50),\
                                 cells_per_block=(1,1), visualize=False, \
                                     channel_axis=-1,feature_vector=True)
+        #Extracting feature using maxpooling
+        input = T.dtensor4('input')
+        maxpool_shape = (downsampling_factor, downsampling_factor)
+        pool_out = pool_2d(input, maxpool_shape, ignore_border=True)
+        f = theano.function([input],pool_out)
+        x_error = channel[0]
+        y_error = channel[1]
+        downsampling_factor = 10
+        downsampled_x = f(x_error.reshape(1, 1, x_error.shape[0], x_error.shape[1]))[0][0]
+        downsampled_y = f(y_error.reshape(1, 1, y_error.shape[0], y_error.shape[1]))[0][0]
+        descriptors = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1)))
+
+        #Extracting feature using downsampling
+        x_error = channel[0]
+        y_error = channel[1]
+        downsampling_factor = 10
+        downsampled_x = uniform_filter(x_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
+        downsampled_y = uniform_filter(y_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
+        descriptors = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1))) 
+
         """ scaler = MinMaxScaler()
         x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))
         y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))
@@ -292,7 +319,7 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
         if val_id%1000==0:       
             print("Finish processing image {}".format(val_id))
         return extracted_feature
-    
+    print("deal with {} images".format(len(train_dataset)))
     dataset_size = len(train_dataset)
     chunk_size = 250
     with ThreadPoolExecutor(max_workers=20) as executor:
@@ -300,9 +327,9 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
     predictions = np.array(predictions)
     print("predictions shape is {}".format(predictions.shape))
 
-    chunk_size = 20000
+    chunk_size = 40000
     num_chunks = int(np.ceil(len(predictions) / chunk_size))
-    chunks = np.array_split(predictions, 1)
+    chunks = np.array_split(predictions, num_chunks)
     selected_indices = []
     weights = np.zeros(len(train_dataset))
     for i, chunk in enumerate(chunks):
@@ -313,7 +340,8 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
         #Normalising subset weight
         subset_weight = subset_weight / np.sum(subset_weight) * len(subset_weight)
         # Add the offset to the selected indices to get the correct index in the large array
-        offset = i * chunk_size
+        offset = len(chunks[i-1]) if i > 0 else 0
+        print(f"Offset: {offset}")
         adjusted_indices = [index + offset for index in subset]
         offset_subset = offset + subset
         weights[offset_subset] = subset_weight
