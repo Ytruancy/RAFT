@@ -1,5 +1,5 @@
 # Data loading based on https://github.com/NVIDIA/flownet2-pytorch
-
+import tensorflow as tf
 import numpy as np
 import torch
 import torch.utils.data as data
@@ -261,33 +261,37 @@ def fetch_trainingset(args,TRAIN_DS='C+T+K+S+H'):
 def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
     def get_descriptors_surf(channel):
         #hog as descriptors
-        scaler = MinMaxScaler()
-        x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))*255
-        y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))*255
-        fixed_channel = np.stack((x_channel,y_channel))
-        descriptors= hog(np.transpose(fixed_channel,(1,2,0)), \
-                              orientations=9, pixels_per_cell=(50,50),\
-                                cells_per_block=(1,1), visualize=False, \
-                                    channel_axis=-1,feature_vector=True)
+        # scaler = MinMaxScaler()
+        # x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))*255
+        # y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))*255
+        # fixed_channel = np.stack((x_channel,y_channel))
+        # descriptors= hog(np.transpose(fixed_channel,(1,2,0)), \
+        #                       orientations=9, pixels_per_cell=(50,50),\
+        #                         cells_per_block=(1,1), visualize=False, \
+        #                             channel_axis=-1,feature_vector=True)
+        
+        
         #Extracting feature using maxpooling
-        input = T.dtensor4('input')
-        maxpool_shape = (downsampling_factor, downsampling_factor)
-        pool_out = pool_2d(input, maxpool_shape, ignore_border=True)
-        f = theano.function([input],pool_out)
+        downsampling_factor = 10
         x_error = channel[0]
         y_error = channel[1]
-        downsampling_factor = 10
-        downsampled_x = f(x_error.reshape(1, 1, x_error.shape[0], x_error.shape[1]))[0][0]
-        downsampled_y = f(y_error.reshape(1, 1, y_error.shape[0], y_error.shape[1]))[0][0]
-        descriptors = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1)))
+        # Reshape to 4D for the max pooling operation
+        x_error = tf.reshape(x_error, [1, x_error.shape[0], x_error.shape[1], 1])
+        y_error = tf.reshape(y_error, [1, y_error.shape[0], y_error.shape[1], 1])
+        pool = tf.keras.layers.MaxPooling2D(pool_size=(downsampling_factor, downsampling_factor), strides=(downsampling_factor,downsampling_factor), padding='valid')
+        downsampled_x = pool(x_error)
+        downsampled_y = pool(y_error)
+        downsampled_x = np.squeeze(downsampled_x.numpy())
+        downsampled_y = np.squeeze(downsampled_y.numpy())
+        descriptors = np.concatenate((downsampled_x.reshape(-1), downsampled_y.reshape(-1)))
 
         #Extracting feature using downsampling
-        x_error = channel[0]
-        y_error = channel[1]
-        downsampling_factor = 10
-        downsampled_x = uniform_filter(x_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
-        downsampled_y = uniform_filter(y_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
-        descriptors = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1))) 
+        # x_error = channel[0]
+        # y_error = channel[1]
+        # downsampling_factor = 10
+        # downsampled_x = uniform_filter(x_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
+        # downsampled_y = uniform_filter(y_error,size = downsampling_factor)[::downsampling_factor, ::downsampling_factor]
+        # descriptors = np.concatenate((downsampled_x.reshape(-1),downsampled_y.reshape(-1))) 
 
         """ scaler = MinMaxScaler()
         x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))
