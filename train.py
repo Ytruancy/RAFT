@@ -162,7 +162,7 @@ def train(args):
 
     should_keep_training = True
     num_epochs = 39
-    subset_size = 0.4
+    subset_size = 0.2
     training_time = []
     selected_instance = []
     data_coverage  = []
@@ -195,7 +195,7 @@ def train(args):
             #     train_loader = datasets.fetch_dataloader(args,coreset=False)
             # else:
             #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloaderdatasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=True,model=model.module)
+            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=False,cluster_feature=True,model=model.module)
             end_subsetselect = time.time()
         subset_selection_time = end_subsetselect-start_subsetselect
         weight = torch.from_numpy(weights).float().cuda() #Pass the subset weight
@@ -218,9 +218,10 @@ def train(args):
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)                
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-            scaler.step(optimizer)
-            
+
+            scaler.step(optimizer)  
             scaler.update()
+            
             scheduler.step()
             
 
@@ -230,7 +231,7 @@ def train(args):
             #if total_steps % VAL_FREQ == VAL_FREQ - 1:
         end_epoch_train = time.time()
         epoch_training_time = end_epoch_train-start_epoch_train
-        print("Epoch {} training complete with {} seconds".format(epoch_training_time))
+        print("Epoch {} training complete with {} seconds".format(epoch,epoch_training_time))
         training_time.append(epoch_training_time+subset_selection_time)
         print("Data coverage: {}".format(len(set(selected_instance))/Size_fullset))
         data_coverage.append(len(set(selected_instance))/Size_fullset)
@@ -264,7 +265,7 @@ def train(args):
             #     should_keep_training = False
             #     break
     end_all_time = time.time()
-    print("total training time: {}".format(training_time))
+    print("total training time: {}".format(np.sum(training_time)))
     print("Data coverage: {}".format(len(set(selected_instance))/Size_fullset))
     print("Total training time: {}".format(end_all_time-start_all_time))
     logger.close()

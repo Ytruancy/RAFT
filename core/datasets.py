@@ -272,17 +272,27 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
         
         
         #Extracting feature using maxpooling
-        downsampling_factor = 10
         x_error = channel[0]
         y_error = channel[1]
-        # Reshape to 4D for the max pooling operation
-        x_error = tf.reshape(x_error, [1, x_error.shape[0], x_error.shape[1], 1])
-        y_error = tf.reshape(y_error, [1, y_error.shape[0], y_error.shape[1], 1])
-        pool = tf.keras.layers.MaxPooling2D(pool_size=(downsampling_factor, downsampling_factor), strides=(downsampling_factor,downsampling_factor), padding='valid')
-        downsampled_x = pool(x_error)
-        downsampled_y = pool(y_error)
-        downsampled_x = np.squeeze(downsampled_x.numpy())
-        downsampled_y = np.squeeze(downsampled_y.numpy())
+        downsampling_factor = 10
+
+        # Convert to PyTorch tensors and add two dimensions for compatibility with MaxPool2d: 
+        # 1st for batch size and last for number of channels
+        x_error = torch.from_numpy(x_error).unsqueeze(0).unsqueeze(0)
+        y_error = torch.from_numpy(y_error).unsqueeze(0).unsqueeze(0)
+
+        # Create max pooling layer
+        max_pool = torch.nn.MaxPool2d(kernel_size=downsampling_factor, stride=downsampling_factor)
+
+        # Apply max pooling
+        downsampled_x = max_pool(x_error)
+        downsampled_y = max_pool(y_error)
+
+        # Convert back to numpy and reshape
+        downsampled_x = downsampled_x.squeeze(0).squeeze(0).numpy()
+        downsampled_y = downsampled_y.squeeze(0).squeeze(0).numpy()
+
+        # Flatten and concatenate the downsampled descriptors
         descriptors = np.concatenate((downsampled_x.reshape(-1), downsampled_y.reshape(-1)))
 
         #Extracting feature using downsampling
