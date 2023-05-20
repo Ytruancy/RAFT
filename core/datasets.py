@@ -1,5 +1,4 @@
 # Data loading based on https://github.com/NVIDIA/flownet2-pytorch
-import tensorflow as tf
 import numpy as np
 import torch
 import torch.utils.data as data
@@ -7,9 +6,6 @@ import torch.nn.functional as F
 import craig
 from pympler import asizeof
 import pickle
-from theano.tensor.signal.pool import pool_2d
-import theano.tensor as T
-import theano
 import sys
 import h5py
 from scipy.ndimage import uniform_filter
@@ -272,8 +268,8 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
         
         
         #Extracting feature using maxpooling
-        x_error = channel[0]
-        y_error = channel[1]
+        x_error = channel[0].numpy()
+        y_error = channel[1].numpy()
         downsampling_factor = 10
 
         # Convert to PyTorch tensors and add two dimensions for compatibility with MaxPool2d: 
