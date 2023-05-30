@@ -161,12 +161,12 @@ def train(args):
     add_noise = True
 
     should_keep_training = True
-    num_epochs = 19
+    num_epochs = 39
     subset_size = 0.4
     training_time = []
     selected_instance = []
     data_coverage  = []
-    start_subset = 1
+    start_subset = 10
     random = False
     cluster_feature = False #Whether to use cluster feature to select subset or not
     selection_predictions = None #predictions to use for selecting subset
@@ -195,7 +195,7 @@ def train(args):
             #     train_loader = datasets.fetch_dataloader(args,coreset=False)
             # else:
             #     train_loader = datasets.fetch_dataloader(args,coreset=True,subset_size=0.2,random=True,cluster_feature=True,model=model.module)
-            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,subset_size=subset_size,random=True,cluster_feature=True,model=model.module)
+            train_loader,selected_index,weights,Size_fullset = datasets.fetch_dataloader(args,coreset=True,subset_size=0.4,random=False,cluster_feature=True,model=model.module)
             end_subsetselect = time.time()
         subset_selection_time = end_subsetselect-start_subsetselect
         weight = torch.from_numpy(weights).float().cuda() #Pass the subset weight

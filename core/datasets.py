@@ -11,7 +11,7 @@ import h5py
 from scipy.ndimage import uniform_filter
 
 from numba import njit, prange
-
+from sklearn.cluster import KMeans
 import os
 import math
 import random
@@ -252,44 +252,70 @@ def fetch_trainingset(args,TRAIN_DS='C+T+K+S+H'):
         aug_params = {'crop_size': args.image_size, 'min_scale': -0.2, 'max_scale': 0.4, 'do_flip': False}
         train_dataset = KITTI(aug_params, split='training')
     return train_dataset
+#subset selection using k-means
+def get_subset_indices(features, subset_size):
+    # Create and fit a KMeans model with 'subset_size' clusters
+    kmeans = KMeans(n_clusters=subset_size, random_state=42).fit(features)
+    
+    # Get the labels of the clusters each instance belongs to
+    labels = kmeans.labels_
+    
+    # Initialize an empty list to store indices of the subset
+    subset_indices = []
+    
+    # For each cluster, find the instance that is closest to the centroid
+    for cluster_id in range(subset_size):
+        # Get the instances belonging to the current cluster
+        instances_in_cluster = features[labels == cluster_id]
+        
+        # Calculate the distance of each instance to the centroid of the current cluster
+        distances_to_centroid = np.linalg.norm(instances_in_cluster - kmeans.cluster_centers_[cluster_id], axis=1)
+        
+        # Find the index of the instance that is closest to the centroid
+        closest_instance_index = np.argmin(distances_to_centroid)
+        
+        # Append the index of the closest instance to the subset_indices list
+        subset_indices.append(np.where(np.all(features==instances_in_cluster[closest_instance_index], axis=1))[0][0])
+        
+    return np.array(subset_indices),np.ones(subset_size)
 
 #Rewrite the function into parallel mode
 def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
     def get_descriptors_surf(channel):
         #hog as descriptors
-        # scaler = MinMaxScaler()
-        # x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))*255
-        # y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))*255
-        # fixed_channel = np.stack((x_channel,y_channel))
-        # descriptors= hog(np.transpose(fixed_channel,(1,2,0)), \
-        #                       orientations=9, pixels_per_cell=(50,50),\
-        #                         cells_per_block=(1,1), visualize=False, \
-        #                             channel_axis=-1,feature_vector=True)
+        scaler = MinMaxScaler()
+        x_channel = scaler.fit_transform(np.where(np.isnan(channel[0]), np.nanmean(channel[0]), channel[0]))*255
+        y_channel = scaler.fit_transform(np.where(np.isnan(channel[1]), np.nanmean(channel[1]), channel[1]))*255
+        fixed_channel = np.stack((x_channel,y_channel))
+        descriptors= hog(np.transpose(fixed_channel,(1,2,0)), \
+                              orientations=9, pixels_per_cell=(50,50),\
+                                cells_per_block=(1,1), visualize=False, \
+                                    channel_axis=-1,feature_vector=True)
         
         
         #Extracting feature using maxpooling
-        x_error = channel[0].numpy()
-        y_error = channel[1].numpy()
-        downsampling_factor = 10
+        # x_error = channel[0].numpy()
+        # y_error = channel[1].numpy()
+        # downsampling_factor = 10
 
-        # Convert to PyTorch tensors and add two dimensions for compatibility with MaxPool2d: 
-        # 1st for batch size and last for number of channels
-        x_error = torch.from_numpy(x_error).unsqueeze(0).unsqueeze(0)
-        y_error = torch.from_numpy(y_error).unsqueeze(0).unsqueeze(0)
+        # # Convert to PyTorch tensors and add two dimensions for compatibility with MaxPool2d: 
+        # # 1st for batch size and last for number of channels
+        # x_error = torch.from_numpy(x_error).unsqueeze(0).unsqueeze(0)
+        # y_error = torch.from_numpy(y_error).unsqueeze(0).unsqueeze(0)
 
-        # Create max pooling layer
-        max_pool = torch.nn.MaxPool2d(kernel_size=downsampling_factor, stride=downsampling_factor)
+        # # Create max pooling layer
+        # max_pool = torch.nn.MaxPool2d(kernel_size=downsampling_factor, stride=downsampling_factor)
 
-        # Apply max pooling
-        downsampled_x = max_pool(x_error)
-        downsampled_y = max_pool(y_error)
+        # # Apply max pooling
+        # downsampled_x = max_pool(x_error)
+        # downsampled_y = max_pool(y_error)
 
-        # Convert back to numpy and reshape
-        downsampled_x = downsampled_x.squeeze(0).squeeze(0).numpy()
-        downsampled_y = downsampled_y.squeeze(0).squeeze(0).numpy()
+        # # Convert back to numpy and reshape
+        # downsampled_x = downsampled_x.squeeze(0).squeeze(0).numpy()
+        # downsampled_y = downsampled_y.squeeze(0).squeeze(0).numpy()
 
-        # Flatten and concatenate the downsampled descriptors
-        descriptors = np.concatenate((downsampled_x.reshape(-1), downsampled_y.reshape(-1)))
+        # # Flatten and concatenate the downsampled descriptors
+        # descriptors = np.concatenate((downsampled_x.reshape(-1), downsampled_y.reshape(-1)))
 
         #Extracting feature using downsampling
         # x_error = channel[0]
@@ -339,16 +365,19 @@ def subsetSelection(args,train_dataset,subset_size,model=None,mode = "train"):
 
     chunk_size = 40000
     num_chunks = int(np.ceil(len(predictions) / chunk_size))
-    chunks = np.array_split(predictions, num_chunks)
+    chunks = np.array_split(predictions, 1)
     selected_indices = []
     weights = np.zeros(len(train_dataset))
     for i, chunk in enumerate(chunks):
         print(f"Processing chunk {i + 1} of {num_chunks}")
         B = int(subset_size*len(chunk))
-        subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, \
-                                            chunk, 'euclidean', no=0,equal_num=False,smtk=0)
+        #subset, subset_weight, _, _, ordering_time, similarity_time = craig.get_orders_and_weights(B, \
+        #                                    chunk, 'euclidean', no=0,equal_num=False,smtk=0)
+        
+        subset,subset_weight = get_subset_indices(chunk,B)
         #Normalising subset weight
         subset_weight = subset_weight / np.sum(subset_weight) * len(subset_weight)
+        
         # Add the offset to the selected indices to get the correct index in the large array
         offset = len(chunks[i-1]) if i > 0 else 0
         print(f"Offset: {offset}")
